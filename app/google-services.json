@@ -1,0 +1,62 @@
+{
+  "project_info": {
+    "project_number": "329742894187",
+    "project_id": "qify-authenticator",
+    "storage_bucket": "qify-authenticator.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:329742894187:android:b171aea3f2e346a2575d2e",
+        "android_client_info": {
+          "package_name": "site.qify.qify_authenticator"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "329742894187-3nsj2mt8rtbkh09uvulln85vndohfrih.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "site.qify.qify_authenticator",
+            "certificate_hash": "c3aa9fba1e2fa06ae3184a784ff401d5941603a8"
+          }
+        },
+        {
+          "client_id": "329742894187-5r1u4gmjo9425bp68obm176hll3jv24h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "site.qify.qify_authenticator",
+            "certificate_hash": "b92b90b437c76a0ea765875821004da74ccf6f38"
+          }
+        },
+        {
+          "client_id": "329742894187-efin7t7a47vm6go996c3tumh1utb1uc4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC_xrCE3t3JWqneGyyLhJhj4JFEWEoro2s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "329742894187-efin7t7a47vm6go996c3tumh1utb1uc4.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "329742894187-ua9gcc2kijj6hsh5gv6elg29ighu4vti.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "site.qify.qifyAuthenticator"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
