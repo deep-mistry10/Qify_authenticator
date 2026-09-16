@@ -78,3 +78,7 @@ android/*.jks
 >>>>>>> 80d066b47d4e7631639aca7072e08db559cd4587
 android
 ios
+firebase_json
+.metadata
+qify_authenticator_android.iml
+README_FINAL_BACKUP.md
