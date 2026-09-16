@@ -8,7 +8,28 @@ Qify Authenticator is a planned cross-platform authenticator application designe
 
 The first target platform is **Android**, built with **Flutter and Android Studio**. Windows, Linux, and macOS support are planned for later stages.
 
-> **Project status:** This repository is under active development. Features described below are part of the planned architecture and roadmap unless they are explicitly marked as implemented.
+> **Project status: DEVELOPMENT — NOT FINISHED**
+>
+> Qify Authenticator is currently in the development phase and is **not a finished or production-ready application**. Features described below are part of the planned architecture and roadmap unless they are explicitly marked as implemented. APIs, UI, security implementation, cryptographic parameters, synchronization behavior, and project structure may change during development.
+
+---
+
+## Development Status
+
+**Current stage: Development / Not Finished**
+
+Qify Authenticator is actively being built and is **not yet complete**.
+
+At this stage:
+
+- The project architecture and security model are being developed.
+- Planned features may not yet be implemented.
+- Implemented features may change or be replaced during development.
+- Security-sensitive functionality requires testing and review before production use.
+- Android is the first target platform; desktop platforms are planned for later.
+- A stable production release has **not** been reached.
+
+Do not treat the current development build as a final authenticator for critical accounts.
 
 ---
 
@@ -402,6 +423,8 @@ The application is planned to include the following screens:
 
 # Development Roadmap
 
+> **All roadmap phases are part of an ongoing development plan. Completion of a phase does not mean the entire project is finished or production-ready.**
+
 ## Phase 1 — Project Foundation
 
 - Create Flutter project
@@ -740,8 +763,12 @@ The central design principle is simple:
 
 ## Development Status
 
-This repository represents an evolving project.
+**Qify Authenticator is currently under development and is not finished.**
 
-Architecture, implementation details, cryptographic parameters, synchronization behavior, and supported platforms may change as development, testing, and security review progress.
+This repository represents an evolving project. The application has not reached its final production-ready state.
+
+Architecture, implementation details, cryptographic parameters, synchronization behavior, supported platforms, UI, and feature scope may change as development, testing, and security review progress.
+
+Roadmap items should be considered planned work unless the repository explicitly marks them as implemented.
 
 For the latest implementation status, refer to the project's commits, issues, roadmap, and release notes.
