@@ -1,0 +1,3 @@
+class QrScannerController {
+  const QrScannerController();
+}

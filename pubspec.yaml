@@ -1,0 +1,31 @@
+name: qify_authenticator
+description: Offline-first TOTP authenticator with encrypted Firebase sync.
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+  flutter: '>=3.27.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  firebase_core: ^4.14.0
+  firebase_auth: ^6.6.1
+  google_sign_in: ^7.1.1
+  cloud_firestore: ^6.9.0
+  flutter_secure_storage: ^11.1.1
+  local_auth: ^3.0.2
+  mobile_scanner: ^7.4.1
+  cryptography: ^2.9.0
+  cryptography_flutter: ^2.3.4
+  crypto: ^3.0.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

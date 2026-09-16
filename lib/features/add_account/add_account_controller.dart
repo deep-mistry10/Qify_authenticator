@@ -1,0 +1,3 @@
+class AddAccountController {
+  const AddAccountController();
+}
