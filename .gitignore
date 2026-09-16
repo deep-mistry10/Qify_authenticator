@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Miscellaneous
 *.class
 *.log
@@ -57,3 +58,23 @@ coverage/
 android/.gradle/
 android/local.properties
 lib/firebase_options.dart
+=======
+gradle-wrapper.jar
+/.gradle
+/captures/
+/gradlew
+/gradlew.bat
+/local.properties
+GeneratedPluginRegistrant.java
+.cxx/
+
+# Remember to never publicly share your keystore.
+# See https://flutter.dev/to/reference-keystore
+key.properties
+**/*.keystore
+**/*.jks
+android/key.properties
+android/*.jks
+>>>>>>> 80d066b47d4e7631639aca7072e08db559cd4587
+android
+ios
