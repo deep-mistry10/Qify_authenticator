@@ -8,138 +8,83 @@ import '../services/secure_storage_service.dart';
 
 class VaultRepository {
   VaultRepository._();
+  static final instance = VaultRepository._();
 
-  static final VaultRepository instance =
-  VaultRepository._();
-
-  static const String _vaultKey =
-      'qify.local.vault.v3';
-
-  static const String _localEncryptionKey =
-      'qify.local.key.v3';
-
-  static const String _deviceKey =
-      'qify.device.id.v3';
-
-  static const String _backupEnabledKey =
-      'qify.cloud.backup.enabled.local.v3';
+  static const _vaultKey = 'qify.local.vault.v2';
+  static const _localEncryptionKey = 'qify.local.key.v2';
+  static const _deviceKey = 'qify.device.id.v2';
+  static const _backupEnabledKey = 'qify.backup.enabled.v2';
+  static const _backupUidKey = 'qify.backup.uid.v2';
+  static const _backupEmailKey = 'qify.backup.email.v2';
+  static const _lastBackupAtKey = 'qify.backup.lastAt.v2';
 
   final SecureStorageService _storage =
       SecureStorageService.instance;
-
   final EncryptionService _crypto =
       EncryptionService.instance;
 
   Vault? _cache;
 
   Future<String> deviceId() async {
-    final existing =
-    await _storage.read(_deviceKey);
-
-    if (existing != null &&
-        existing.isNotEmpty) {
-      return existing;
-    }
+    final existing = await _storage.read(_deviceKey);
+    if (existing != null && existing.isNotEmpty) return existing;
 
     final random = Random.secure();
-
     final bytes = List<int>.generate(
       16,
-          (_) => random.nextInt(256),
+      (_) => random.nextInt(256),
+      growable: false,
     );
+    final encoded = base64UrlEncode(bytes);
 
-    final id = base64UrlEncode(
-      bytes,
-    );
-
-    await _storage.write(
-      _deviceKey,
-      id,
-    );
-
-    return id;
+    await _storage.write(_deviceKey, encoded);
+    return encoded;
   }
 
   Future<List<int>> _localKey() async {
-    final existing =
-    await _storage.read(
-      _localEncryptionKey,
-    );
-
-    if (existing != null &&
-        existing.isNotEmpty) {
-      final decoded =
-      base64Url.decode(existing);
-
-      if (decoded.length != 32) {
-        throw StateError(
-          'Local encryption key is invalid.',
-        );
+    final existing = await _storage.read(_localEncryptionKey);
+    if (existing != null && existing.isNotEmpty) {
+      final value = base64Url.decode(existing);
+      if (value.length != 32) {
+        throw StateError('Local encryption key is invalid.');
       }
-
-      return decoded;
+      return value;
     }
 
-    final key =
-    _crypto.randomBytes(32);
-
+    final key = _crypto.randomBytes(32);
     await _storage.write(
       _localEncryptionKey,
       base64UrlEncode(key),
     );
-
     return key;
   }
 
   Future<Vault> load() async {
-    if (_cache != null) {
-      return _cache!;
-    }
+    if (_cache != null) return _cache!;
 
-    final encrypted =
-    await _storage.read(
-      _vaultKey,
-    );
+    final encoded = await _storage.read(_vaultKey);
 
-    if (encrypted == null ||
-        encrypted.isEmpty) {
+    if (encoded == null || encoded.isEmpty) {
       _cache = const Vault();
       return _cache!;
     }
 
-    final plaintext =
-    await _crypto.decryptWithRawKey(
-      encoded: encrypted,
+    final clear = await _crypto.decryptWithRawKey(
+      encoded: encoded,
       keyBytes: await _localKey(),
     );
 
-    final decoded =
-    jsonDecode(plaintext);
-
-    if (decoded is! Map) {
-      throw const FormatException(
-        'Local vault is invalid.',
-      );
-    }
-
     _cache = Vault.fromJson(
-      Map<String, dynamic>.from(decoded),
+      jsonDecode(clear) as Map<String, dynamic>,
     );
 
     return _cache!;
   }
 
-  Future<Vault> save(
-      Vault vault,
-      ) async {
-    final plaintext =
-    jsonEncode(
-      vault.toJson(),
-    );
-
-    final encrypted =
-    await _crypto.encryptWithRawKey(
-      plaintext: plaintext,
+  Future<Vault> save(Vault vault) async {
+    final clear = jsonEncode(vault.toJson());
+    final encrypted = await _crypto.encryptWithRawKey(
+      plaintext: clear,
       keyBytes: await _localKey(),
     );
 
@@ -149,29 +94,21 @@ class VaultRepository {
     );
 
     _cache = vault;
-
     return vault;
   }
 
-  Future<Vault> addAccount(
-      TotpAccount account,
-      ) async {
-    final current =
-    await load();
+  Future<Vault> addAccount(TotpAccount account) async {
+    final current = await load();
 
-    final duplicate =
-    current.accounts.any(
-          (existing) =>
-      existing.secret == account.secret &&
-          existing.issuer == account.issuer &&
-          existing.accountName ==
-              account.accountName,
+    final duplicate = current.accounts.any(
+      (a) =>
+          a.secret == account.secret &&
+          a.accountName == account.accountName &&
+          a.issuer == account.issuer,
     );
 
     if (duplicate) {
-      throw StateError(
-        'This account already exists.',
-      );
+      throw StateError('This account already exists.');
     }
 
     return save(
@@ -186,70 +123,107 @@ class VaultRepository {
   }
 
   Future<Vault> updateAccount(
-      TotpAccount account,
-      ) async {
-    final current =
-    await load();
+    TotpAccount account,
+  ) async {
+    final current = await load();
 
     return save(
       current.copyWith(
         version: current.version + 1,
         accounts: current.accounts
             .map(
-              (existing) =>
-          existing.id == account.id
-              ? account
-              : existing,
-        )
+              (a) => a.id == account.id
+                  ? account
+                  : a,
+            )
             .toList(),
       ),
     );
   }
 
   Future<Vault> deleteAccount(
-      String accountId,
-      ) async {
-    final current =
-    await load();
+    String id,
+  ) async {
+    final current = await load();
 
     return save(
       current.copyWith(
         version: current.version + 1,
         accounts: current.accounts
-            .where(
-              (account) =>
-          account.id != accountId,
-        )
+            .where((a) => a.id != id)
             .toList(),
       ),
     );
   }
 
-  Future<void> replace(
-      Vault vault,
-      ) async {
+  Future<void> replace(Vault vault) async {
     await save(vault);
   }
 
   Future<bool> isBackupEnabled() async {
-    final value =
-    await _storage.read(
-      _backupEnabledKey,
-    );
-
-    return value == 'true';
+    return (await _storage.read(_backupEnabledKey)) == 'true';
   }
 
-  Future<void> setBackupEnabled(
-      bool enabled,
-      ) async {
+  Future<void> setBackupEnabled(bool enabled) async {
     await _storage.write(
       _backupEnabledKey,
       enabled ? 'true' : 'false',
     );
   }
 
+  Future<String?> backupUid() =>
+      _storage.read(_backupUidKey);
+
+  Future<String?> backupEmail() =>
+      _storage.read(_backupEmailKey);
+
+  Future<void> setBackupAccount({
+    required String uid,
+    required String email,
+  }) async {
+    await _storage.write(
+      _backupUidKey,
+      uid,
+    );
+    await _storage.write(
+      _backupEmailKey,
+      email,
+    );
+    await setBackupEnabled(true);
+  }
+
+  Future<void> clearBackupAccount() async {
+    await _storage.delete(_backupUidKey);
+    await _storage.delete(_backupEmailKey);
+    await _storage.delete(_lastBackupAtKey);
+    await setBackupEnabled(false);
+  }
+
+  Future<DateTime?> lastBackupAt() async {
+    final value = await _storage.read(
+      _lastBackupAtKey,
+    );
+    if (value == null || value.isEmpty) return null;
+    return DateTime.tryParse(value)?.toLocal();
+  }
+
+  Future<void> setLastBackupAt(
+    DateTime value,
+  ) async {
+    await _storage.write(
+      _lastBackupAtKey,
+      value.toUtc().toIso8601String(),
+    );
+  }
+
   Future<void> clearMemoryCache() async {
+    _cache = null;
+  }
+
+  Future<void> clearAllLocalData() async {
+    await _storage.delete(_vaultKey);
+    await _storage.delete(_localEncryptionKey);
+    await _storage.delete(_lastBackupAtKey);
     _cache = null;
   }
 }

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../services/firebase_auth_service.dart';
 import '../../services/onboarding_service.dart';
 import '../../services/vault_sync_service.dart';
+import '../../repositories/vault_repository.dart';
 import '../home/home_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -16,8 +18,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   bool _loading = false;
 
   Future<void> _startLocal() async {
+    if (_loading) return;
+
     await OnboardingService.instance.complete();
     if (!mounted) return;
+
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const HomeScreen()),
     );
@@ -29,42 +34,88 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
     try {
       final credential =
-          await FirebaseAuthService.instance.signInWithGoogle();
+      await FirebaseAuthService.instance.signInWithGoogle();
       final user = credential.user;
 
       if (user == null) {
         throw StateError('Google sign-in did not return a user.');
       }
 
-      final result =
-          await VaultSyncService.instance.restoreForSignedInUser(user: user);
+      final result = await VaultSyncService.instance
+          .restoreForSignedInUser(user: user)
+          .timeout(const Duration(seconds: 25));
 
       if (!mounted) return;
 
-      if (!result.success) {
-        await FirebaseAuthService.instance.logout();
-        if (mounted) _message(result.message);
+      if (result.success) {
+        final restoredVault = await VaultRepository.instance.load();
+
+        if (restoredVault.accounts.isEmpty) {
+          throw StateError(
+            'The backup was restored, but it contains no authenticator accounts.',
+          );
+        }
+
+        await OnboardingService.instance.complete();
+        if (!mounted) return;
+
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+        );
         return;
       }
 
-      await OnboardingService.instance.complete();
+      final noBackup = result.message.toLowerCase().contains('no qify backup') ||
+          result.message.toLowerCase().contains('no backup');
 
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
-    } catch (e) {
-      if (mounted) {
-        _message(
-          e.toString().replaceFirst('Exception: ', ''),
-        );
+      if (noBackup) {
+        await _showNoBackupDialog();
+      } else {
+        _message(result.message);
       }
+    } catch (e) {
+      if (!mounted) return;
+      _message(_cleanError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
+  Future<void> _showNoBackupDialog() async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('No backup found'),
+          content: const Text(
+            'This Google account does not have a Qify Authenticator backup yet. Choose “I am a new user” on the welcome screen to continue with a local authenticator.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () async {
+                Navigator.pop(dialogContext);
+                await _startLocal();
+              },
+              child: const Text('I am a new user'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _cleanError(Object error) {
+    final text = error.toString().replaceFirst('Exception: ', '').trim();
+    if (text.isEmpty) return 'Could not restore the backup.';
+    if (text.contains('TimeoutException')) {
+      return 'Backup lookup timed out. Check your internet connection and try again.';
+    }
+    return text;
+  }
+
   void _message(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
@@ -72,63 +123,131 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       body: SafeArea(
         child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Padding(
-              padding: const EdgeInsets.all(28),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(Icons.shield_outlined, size: 72),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: 76,
+                    height: 76,
+                    decoration: BoxDecoration(
+                      color: AppConstants.primary,
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.shield_outlined,
+                      color: Colors.white,
+                      size: 42,
+                    ),
+                  ),
                   const SizedBox(height: 24),
                   Text(
-                    'Qify Authenticator',
+                    'Qify',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineMedium
-                        ?.copyWith(fontWeight: FontWeight.w800),
+                    style: theme.textTheme.headlineLarge?.copyWith(
+                      fontSize: 42,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -1.1,
+                    ),
                   ),
-                  const SizedBox(height: 10),
                   Text(
-                    'Use your authenticator locally, or restore an encrypted cloud backup from your Google account.',
+                    'Authenticator',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyLarge
-                        ?.copyWith(height: 1.45),
+                    style: theme.textTheme.headlineLarge?.copyWith(
+                      fontSize: 31,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.7,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Simple, private authentication that keeps your TOTP codes on this device.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontSize: 16,
+                      height: 1.55,
+                    ),
                   ),
                   const SizedBox(height: 34),
-                  FilledButton(
-                    onPressed: _loading ? null : _startLocal,
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 14),
-                      child: Text('I am a new user'),
+                  Text(
+                    'GET STARTED',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: AppConstants.primary,
+                      letterSpacing: 1.6,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: _loading ? null : _startLocal,
+                    child: const Text('I am a new user'),
+                  ),
+                  const SizedBox(height: 11),
                   OutlinedButton(
                     onPressed: _loading ? null : _recover,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      child: _loading
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('I have a backup'),
+                    child: _loading
+                        ? const SizedBox(
+                      width: 21,
+                      height: 21,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                        : const Text('Already have an account / Restore backup'),
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppConstants.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppConstants.border),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: AppConstants.primary.withValues(alpha: 0.08),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.lock_outline_rounded,
+                            size: 17,
+                            color: AppConstants.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Text(
+                            'Cloud backup is optional. TOTP generation works offline.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontSize: 13,
+                              height: 1.45,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    'Cloud backup is optional. TOTP generation works offline.',
+                    'Your authenticator stays usable even when you are offline.',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),

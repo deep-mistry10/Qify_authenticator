@@ -3,176 +3,66 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 class FirebaseAuthService {
   FirebaseAuthService._();
+  static final instance = FirebaseAuthService._();
 
-  static final FirebaseAuthService instance =
-  FirebaseAuthService._();
-
-  final FirebaseAuth _auth =
-      FirebaseAuth.instance;
-
-  final GoogleSignIn _googleSignIn =
-      GoogleSignIn.instance;
-
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   bool _googleInitialized = false;
 
-  User? get currentUser {
-    return _auth.currentUser;
-  }
-
-  Stream<User?> get authStateChanges {
-    return _auth.authStateChanges();
-  }
-
-  // ---------------------------------------------------------------------------
-  // GOOGLE SIGN-IN
-  // ---------------------------------------------------------------------------
+  User? get currentUser => _auth.currentUser;
+  Stream<User?> get authStateChanges => _auth.authStateChanges();
+  bool get isSignedIn => _auth.currentUser != null;
 
   Future<void> initializeGoogleSignIn() async {
-    if (_googleInitialized) {
-      return;
-    }
-
+    if (_googleInitialized) return;
     await _googleSignIn.initialize();
-
     _googleInitialized = true;
   }
 
   Future<UserCredential> signInWithGoogle() async {
     await initializeGoogleSignIn();
 
-    final GoogleSignInAccount googleUser =
-    await _googleSignIn.authenticate();
-
-    final GoogleSignInAuthentication googleAuth =
-        googleUser.authentication;
-
-    final String? idToken = googleAuth.idToken;
+    final googleUser = await _googleSignIn.authenticate();
+    final googleAuth = googleUser.authentication;
+    final idToken = googleAuth.idToken;
 
     if (idToken == null || idToken.isEmpty) {
       throw FirebaseAuthException(
         code: 'missing-google-id-token',
-        message:
-        'Google sign-in did not return an ID token.',
+        message: 'Google sign-in did not return an ID token.',
       );
     }
 
-    final OAuthCredential credential =
-    GoogleAuthProvider.credential(
-      idToken: idToken,
-    );
-
-    return _auth.signInWithCredential(
-      credential,
-    );
+    final credential = GoogleAuthProvider.credential(idToken: idToken);
+    return _auth.signInWithCredential(credential);
   }
 
-  // ---------------------------------------------------------------------------
-  // EMAIL / PASSWORD LOGIN
-  // ---------------------------------------------------------------------------
-
-  // Positional arguments are intentionally used here
-  // because the existing login screen calls:
-  //
-  // authService.login(email, password)
-  Future<UserCredential> login(
-      String email,
-      String password,
-      ) async {
-    final cleanEmail =
-    email.trim().toLowerCase();
-
-    if (cleanEmail.isEmpty) {
-      throw FirebaseAuthException(
-        code: 'invalid-email',
-        message: 'Enter your email address.',
-      );
-    }
-
-    if (password.isEmpty) {
-      throw FirebaseAuthException(
-        code: 'empty-password',
-        message: 'Enter your password.',
-      );
-    }
-
-    return _auth.signInWithEmailAndPassword(
-      email: cleanEmail,
-      password: password,
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // REGISTER
-  // ---------------------------------------------------------------------------
-
-  // Positional arguments are intentionally used here
-  // because the existing register screen calls:
-  //
-  // authService.register(email, password)
-  Future<UserCredential> register(
-      String email,
-      String password,
-      ) async {
-    final cleanEmail =
-    email.trim().toLowerCase();
-
-    if (cleanEmail.isEmpty) {
-      throw FirebaseAuthException(
-        code: 'invalid-email',
-        message: 'Enter your email address.',
-      );
-    }
-
-    if (password.isEmpty) {
-      throw FirebaseAuthException(
-        code: 'empty-password',
-        message: 'Enter a password.',
-      );
-    }
-
+  Future<UserCredential> register(String email, String password) {
     return _auth.createUserWithEmailAndPassword(
-      email: cleanEmail,
+      email: email.trim(),
       password: password,
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // PASSWORD RESET
-  // ---------------------------------------------------------------------------
-
-  Future<void> resetPassword(
-      String email,
-      ) async {
-    final cleanEmail =
-    email.trim().toLowerCase();
-
-    if (cleanEmail.isEmpty) {
-      throw FirebaseAuthException(
-        code: 'invalid-email',
-        message: 'Enter your email address.',
-      );
-    }
-
-    await _auth.sendPasswordResetEmail(
-      email: cleanEmail,
+  Future<UserCredential> login(String email, String password) {
+    return _auth.signInWithEmailAndPassword(
+      email: email.trim(),
+      password: password,
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // LOGOUT
-  // ---------------------------------------------------------------------------
+  Future<void> resetPassword(String email) {
+    return _auth.sendPasswordResetEmail(email: email.trim());
+  }
 
   Future<void> logout() async {
     Object? firstError;
-
     try {
-      if (!_googleInitialized) {
-        await initializeGoogleSignIn();
+      if (_googleInitialized) {
+        await _googleSignIn.signOut();
       }
-
-      await _googleSignIn.signOut();
     } catch (e) {
-      firstError = e;
+      firstError ??= e;
     }
 
     try {
@@ -181,8 +71,13 @@ class FirebaseAuthService {
       firstError ??= e;
     }
 
+    if (_auth.currentUser != null) {
+      throw StateError('Firebase sign-out did not complete.');
+    }
+
     if (firstError != null) {
-      throw firstError;
+      // Firebase sign-out completed, so local app state is still signed out.
+      return;
     }
   }
 }

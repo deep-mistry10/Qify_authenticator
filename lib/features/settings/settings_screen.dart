@@ -1,390 +1,202 @@
 import 'package:flutter/material.dart';
 
+import '../../repositories/vault_repository.dart';
 import '../../services/firebase_auth_service.dart';
-import '../backup/backup_screen.dart';
+import '../../services/onboarding_service.dart';
 import '../../widgets/app_lock.dart';
+import '../backup/backup_screen.dart';
+import '../onboarding/onboarding_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({
-    super.key,
-  });
+  const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() =>
-      _SettingsScreenState();
+  State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState
-    extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen> {
   bool _signingOut = false;
 
-  void _refresh() {
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {});
-  }
-
   Future<void> _openBackup() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const BackupScreen(),
-      ),
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const BackupScreen()),
     );
-
-    _refresh();
+    if (mounted) setState(() {});
   }
 
-  Future<void> _signOut() async {
-    if (_signingOut) {
-      return;
-    }
+  Future<void> _logout() async {
+    if (_signingOut) return;
 
-    final user =
-        FirebaseAuthService.instance.currentUser;
-
-    if (user == null) {
-      _refresh();
-      return;
-    }
-
-    final confirmed =
-    await showDialog<bool>(
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text(
-            'Sign out?',
-          ),
+          title: const Text('Sign out?'),
           content: const Text(
-            'You will be signed out of the Google backup account. '
-                'Your local authenticator accounts will remain on this device.',
+            'You will return to the Qify Authenticator start screen and the accounts stored locally on this device will be removed. Your cloud backup will not be deleted. You can restore it again by signing in with the same Google account.',
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext)
-                    .pop(false);
-              },
-              child: const Text(
-                'Cancel',
-              ),
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () {
-                Navigator.of(dialogContext)
-                    .pop(true);
-              },
-              child: const Text(
-                'Sign out',
-              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Sign out'),
             ),
           ],
         );
       },
     );
 
-    if (confirmed != true || !mounted) {
-      return;
-    }
+    if (confirmed != true || _signingOut) return;
 
-    setState(() {
-      _signingOut = true;
-    });
+    setState(() => _signingOut = true);
 
     try {
-      await FirebaseAuthService.instance
-          .logout();
+      // 1. End the Google/Firebase session.
+      await FirebaseAuthService.instance.logout();
 
-      if (!mounted) {
-        return;
-      }
+      // 2. Remove only local/device state associated with this session.
+      //    The Firestore backup remains untouched.
+      await VaultRepository.instance.clearAllLocalData();
+      await VaultRepository.instance.clearBackupAccount();
 
-      setState(() {
-        _signingOut = false;
-      });
+      // 3. Make the app show the first-launch choice again.
+      await OnboardingService.instance.reset();
 
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Signed out successfully.',
-            ),
-          ),
-        );
+      if (!mounted) return;
+
+      // 4. Remove the current Home/Settings navigation stack so the user
+      //    cannot press Back and return to the previous signed-out state.
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const OnboardingScreen(),
+        ),
+            (route) => false,
+      );
     } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _signingOut = false;
-      });
-
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              _cleanError(e),
-            ),
-          ),
-        );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sign out failed: $e'),
+        ),
+      );
+      setState(() => _signingOut = false);
     }
   }
 
-  void _lockNow() {
+  Future<void> _lockNow() async {
     AppLockGate.lockNow();
-
-    if (!mounted) {
-      return;
-    }
-
-    Navigator.of(context).pop();
-  }
-
-  String _cleanError(Object error) {
-    return error
-        .toString()
-        .replaceFirst(
-      'Exception: ',
-      '',
-    )
-        .replaceFirst(
-      'StateError: ',
-      '',
-    )
-        .trim();
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    final user =
-        FirebaseAuthService.instance.currentUser;
-
-    final isSignedIn = user != null;
-
-    final displayName =
-    user?.displayName?.trim();
-
-    final email =
-    user?.email?.trim();
+    final user = FirebaseAuthService.instance.currentUser;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Settings',
-        ),
-      ),
+      appBar: AppBar(title: const Text('Settings')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          16,
-          8,
-          16,
-          32,
-        ),
         children: [
-          Text(
-            'Account',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(
-              fontWeight:
-              FontWeight.w700,
+          const ListTile(
+            title: Text(
+              'Account',
+              style: TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
-          const SizedBox(height: 8),
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: CircleAvatar(
-                    child: Icon(
-                      isSignedIn
-                          ? Icons.account_circle_rounded
-                          : Icons.person_outline_rounded,
-                    ),
-                  ),
-                  title: Text(
-                    isSignedIn
-                        ? (displayName?.isNotEmpty == true
-                        ? displayName!
-                        : 'Google account')
-                        : 'Not signed in',
-                  ),
-                  subtitle: Text(
-                    isSignedIn
-                        ? (email?.isNotEmpty == true
-                        ? email!
-                        : 'Google account')
-                        : 'Google sign-in is optional.',
-                  ),
-                ),
-                if (isSignedIn)
-                  Padding(
-                    padding:
-                    const EdgeInsets.fromLTRB(
-                      16,
-                      0,
-                      16,
-                      16,
-                    ),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: OutlinedButton.icon(
-                        onPressed: _signingOut
-                            ? null
-                            : _signOut,
-                        icon: _signingOut
-                            ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child:
-                          CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
-                        )
-                            : const Icon(
-                          Icons.logout_rounded,
-                        ),
-                        label: Text(
-                          _signingOut
-                              ? 'Signing out...'
-                              : 'Sign out',
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 28),
-
-          Text(
-            'Backup',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(
-              fontWeight:
-              FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Card(
-            child: ListTile(
-              leading: const Icon(
-                Icons.cloud_outlined,
+          if (user != null)
+            ListTile(
+              leading: CircleAvatar(
+                backgroundImage:
+                user.photoURL != null && user.photoURL!.isNotEmpty
+                    ? NetworkImage(user.photoURL!)
+                    : null,
+                child: user.photoURL == null || user.photoURL!.isEmpty
+                    ? const Icon(Icons.person_outline_rounded)
+                    : null,
               ),
-              title: const Text(
-                'Cloud backup',
+              title: Text(
+                user.displayName?.isNotEmpty == true
+                    ? user.displayName!
+                    : 'Google account',
+              ),
+              subtitle: Text(user.email ?? ''),
+            )
+          else
+            const ListTile(
+              leading: Icon(Icons.person_off_outlined),
+              title: Text('Not signed in'),
+              subtitle: Text(
+                'Google sign-in is only used for optional cloud backup.',
+              ),
+            ),
+          if (user != null)
+            ListTile(
+              leading: const Icon(Icons.logout_rounded),
+              title: Text(
+                _signingOut ? 'Signing out...' : 'Sign out',
               ),
               subtitle: const Text(
-                'Encrypted backup and restore using your Google account.',
+                'Return to the start screen and clear local accounts from this device.',
               ),
-              trailing: const Icon(
-                Icons.chevron_right_rounded,
-              ),
-              onTap: _openBackup,
+              enabled: !_signingOut,
+              onTap: _logout,
+            ),
+          const Divider(),
+          const ListTile(
+            title: Text(
+              'Cloud backup',
+              style: TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
-
-          const SizedBox(height: 28),
-
-          Text(
-            'Security',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(
-              fontWeight:
-              FontWeight.w700,
+          FutureBuilder<bool>(
+            future: VaultRepository.instance.isBackupEnabled(),
+            builder: (context, snapshot) {
+              final enabled = snapshot.data ?? false;
+              return ListTile(
+                leading: Icon(
+                  enabled
+                      ? Icons.cloud_done_outlined
+                      : Icons.cloud_off_outlined,
+                ),
+                title: const Text('Backup'),
+                subtitle: Text(
+                  enabled
+                      ? 'Automatic encrypted backup is enabled.'
+                      : 'Optional backup to your Google account.',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: _openBackup,
+              );
+            },
+          ),
+          const Divider(),
+          const ListTile(
+            title: Text(
+              'Security',
+              style: TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
-          const SizedBox(height: 8),
-          Card(
-            child: Column(
-              children: [
-                const ListTile(
-                  leading: Icon(
-                    Icons.phonelink_lock_rounded,
-                  ),
-                  title: Text(
-                    'Device screen lock',
-                  ),
-                  subtitle: Text(
-                    'Qify Authenticator uses your device security to protect the app.',
-                  ),
-                ),
-                const Divider(
-                  height: 1,
-                ),
-                ListTile(
-                  leading: const Icon(
-                    Icons.lock_outline_rounded,
-                  ),
-                  title: const Text(
-                    'Lock now',
-                  ),
-                  subtitle: const Text(
-                    'Lock the authenticator immediately.',
-                  ),
-                  trailing: const Icon(
-                    Icons.chevron_right_rounded,
-                  ),
-                  onTap: _lockNow,
-                ),
-              ],
+          const ListTile(
+            leading: Icon(Icons.security_rounded),
+            title: Text('Device screen lock'),
+            subtitle: Text(
+              'The authenticator uses your device screen lock to protect the app.',
             ),
           ),
-
-          const SizedBox(height: 28),
-
-          Text(
-            'Information',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(
-              fontWeight:
-              FontWeight.w700,
-            ),
+          ListTile(
+            leading: const Icon(Icons.lock_outline_rounded),
+            title: const Text('Lock now'),
+            subtitle: const Text('Lock the authenticator immediately.'),
+            onTap: _lockNow,
           ),
-          const SizedBox(height: 8),
-          Card(
-            child: Column(
-              children: const [
-                ListTile(
-                  leading: Icon(
-                    Icons.security_rounded,
-                  ),
-                  title: Text(
-                    'Local TOTP generation',
-                  ),
-                  subtitle: Text(
-                    'OTP codes are generated locally on this device.',
-                  ),
-                ),
-                Divider(
-                  height: 1,
-                ),
-                ListTile(
-                  leading: Icon(
-                    Icons.cloud_outlined,
-                  ),
-                  title: Text(
-                    'Optional cloud backup',
-                  ),
-                  subtitle: Text(
-                    'The authenticator continues working without a Google account.',
-                  ),
-                ),
-              ],
+          const Divider(),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: Text(
+              'Qify Authenticator works without a cloud account. TOTP codes are generated locally.',
             ),
           ),
         ],

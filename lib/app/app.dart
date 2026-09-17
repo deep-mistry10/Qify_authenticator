@@ -19,7 +19,7 @@ class QifyAuthenticatorApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: buildQifyTheme(Brightness.light),
       darkTheme: buildQifyTheme(Brightness.dark),
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.light,
       home: const StartupGate(),
       routes: {
         '/login': (_) => const LoginScreen(),

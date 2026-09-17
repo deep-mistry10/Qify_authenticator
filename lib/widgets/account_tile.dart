@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../core/constants/app_constants.dart';
+import '../core/utils/service_logo.dart';
 import '../models/totp_account.dart';
 
-class AccountTile
-    extends StatelessWidget {
+class AccountTile extends StatelessWidget {
   final TotpAccount account;
   final VoidCallback onTap;
   final VoidCallback onDelete;
@@ -16,104 +17,53 @@ class AccountTile
   });
 
   @override
-  Widget build(
-      BuildContext context,
-      ) {
-    final issuer =
-    account.issuer.trim();
-
-    final accountName =
-    account.accountName.trim();
-
-    final initial = issuer.isEmpty
-        ? '?'
-        : issuer
-        .characters
-        .first
-        .toUpperCase();
+  Widget build(BuildContext context) {
+    final issuer = account.issuer.trim();
+    final accountName = account.accountName.trim();
 
     return Card(
-      margin:
-      const EdgeInsets.symmetric(
-        horizontal: 4,
-        vertical: 5,
-      ),
       child: InkWell(
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
-        borderRadius:
-        BorderRadius.circular(16),
         child: Padding(
-          padding:
-          const EdgeInsets.fromLTRB(
-            14,
-            14,
-            8,
-            14,
-          ),
+          padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
           child: Row(
-            crossAxisAlignment:
-            CrossAxisAlignment.center,
             children: [
-              CircleAvatar(
-                radius: 24,
-                child: Text(
-                  initial,
-                  style: const TextStyle(
-                    fontWeight:
-                    FontWeight.w700,
-                  ),
-                ),
-              ),
+              ServiceLogo.avatar(issuer),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                  CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      issuer.isEmpty
-                          ? 'Unknown service'
-                          : issuer,
+                      issuer.isEmpty ? 'Unknown service' : issuer,
                       maxLines: 1,
-                      overflow:
-                      TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight:
-                        FontWeight.w700,
-                        fontSize: 16,
-                      ),
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppConstants.textPrimary,
+                          ),
                     ),
-                    const SizedBox(
-                      height: 4,
-                    ),
+                    const SizedBox(height: 3),
                     Text(
-                      accountName.isEmpty
-                          ? 'No account name'
-                          : accountName,
-                      maxLines: 2,
-                      overflow:
-                      TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurfaceVariant,
-                      ),
+                      accountName.isEmpty ? 'Account' : accountName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppConstants.textSecondary,
+                          ),
                     ),
                   ],
                 ),
               ),
               PopupMenuButton<String>(
                 onSelected: (value) {
-                  if (value == 'delete') {
-                    onDelete();
-                  }
+                  if (value == 'delete') onDelete();
                 },
                 itemBuilder: (_) => const [
-                  PopupMenuItem<String>(
+                  PopupMenuItem(
                     value: 'delete',
-                    child: Text(
-                      'Delete account',
-                    ),
+                    child: Text('Delete account'),
                   ),
                 ],
               ),

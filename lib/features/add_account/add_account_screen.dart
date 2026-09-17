@@ -16,460 +16,245 @@ class AddAccountScreen extends StatefulWidget {
 }
 
 class _AddAccountScreenState extends State<AddAccountScreen> {
-  final TextEditingController _issuerController = TextEditingController();
-  final TextEditingController _secretController = TextEditingController();
+  final _issuer = TextEditingController();
+  final _secret = TextEditingController();
 
   String _accountName = '';
   String _algorithm = AppConstants.defaultTotpAlgorithm;
   int _digits = AppConstants.defaultTotpDigits;
   int _period = AppConstants.defaultTotpPeriod;
-
   bool _manualMode = false;
-  bool _openingScanner = false;
   bool _saving = false;
+  bool _openingScanner = false;
 
   @override
   void initState() {
     super.initState();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _openScannerAutomatically();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scan());
   }
 
   @override
   void dispose() {
-    _issuerController.dispose();
-    _secretController.dispose();
+    _issuer.dispose();
+    _secret.dispose();
     super.dispose();
   }
 
-  Future<void> _openScannerAutomatically() async {
-    await _scanQrCode();
-  }
-
-  Future<void> _scanQrCode() async {
-    if (_openingScanner || _saving || !mounted) {
-      return;
-    }
-
-    setState(() {
-      _openingScanner = true;
-    });
+  Future<void> _scan() async {
+    if (_openingScanner || _saving) return;
+    setState(() => _openingScanner = true);
 
     try {
-      final result = await Navigator.of(context).push<String>(
-        MaterialPageRoute(
-          builder: (_) => const QrScannerScreen(),
-        ),
+      final result = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(builder: (_) => const QrScannerScreen()),
       );
 
-      if (!mounted) {
-        return;
-      }
-
+      if (!mounted) return;
       if (result == null || result.trim().isEmpty) {
-        setState(() {
-          _manualMode = true;
-        });
+        setState(() => _manualMode = true);
         return;
       }
 
       final parsed = OtpAuthParser.parse(result);
-
       setState(() {
-        _issuerController.text =
-        parsed.issuer == 'Unknown' ? '' : parsed.issuer;
-
-        _secretController.text = parsed.secret;
-
-        _accountName =
-        parsed.accountName == 'Unknown account'
-            ? ''
-            : parsed.accountName;
-
+        _issuer.text = parsed.issuer == 'Unknown' ? '' : parsed.issuer;
+        _secret.text = parsed.secret;
+        _accountName = parsed.accountName;
         _algorithm = parsed.algorithm;
         _digits = parsed.digits;
         _period = parsed.period;
-
         _manualMode = true;
       });
     } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _manualMode = true;
-      });
-
-      _showMessage(
-        _cleanError(e),
-      );
+      if (!mounted) return;
+      setState(() => _manualMode = true);
+      _message(e.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (mounted) {
-        setState(() {
-          _openingScanner = false;
-        });
-      }
+      if (mounted) setState(() => _openingScanner = false);
     }
   }
 
-  Future<void> _saveAccount() async {
-    if (_saving) {
+  Future<void> _save() async {
+    final issuer = _issuer.text.trim();
+    final secret = _secret.text.replaceAll(RegExp(r'\s+'), '').toUpperCase();
+
+    if (issuer.isEmpty || secret.isEmpty) {
+      _message('App / service name and security key are required.');
       return;
     }
 
-    final issuer = _issuerController.text.trim();
-    final secret = _secretController.text
-        .replaceAll(RegExp(r'\s+'), '')
-        .trim()
-        .toUpperCase();
-
-    if (issuer.isEmpty) {
-      _showMessage('Enter the app or service name.');
-      return;
-    }
-
-    if (secret.isEmpty) {
-      _showMessage('Enter the security key.');
-      return;
-    }
-
-    setState(() {
-      _saving = true;
-    });
+    setState(() => _saving = true);
 
     try {
-      final vault = await VaultRepository.instance.load();
+      final current = await VaultRepository.instance.load();
       final now = DateTime.now().toUtc();
+      final accountName = _accountName.trim().isEmpty ? issuer : _accountName.trim();
 
-      final normalizedAccountName = _accountName.trim();
-
-      final account = TotpAccount(
+      final item = TotpAccount(
         id: createId(),
         issuer: issuer,
-        accountName: normalizedAccountName,
+        accountName: accountName,
         secret: secret,
         algorithm: _algorithm,
         digits: _digits,
         period: _period,
         createdAt: now,
         updatedAt: now,
-        sortOrder: vault.accounts.length,
+        sortOrder: current.accounts.length,
       );
 
-      await VaultRepository.instance.addAccount(account);
+      await VaultRepository.instance.addAccount(item);
 
-      final backupEnabled =
-      await VaultRepository.instance.isBackupEnabled();
-
+      final backupEnabled = await VaultRepository.instance.isBackupEnabled();
       if (backupEnabled) {
-        final result =
-        await VaultSyncService.instance.syncIfEnabled();
-
-        if (!result.success && mounted) {
-          _showMessage(result.message);
-        }
+        final result = await VaultSyncService.instance.syncIfEnabled();
+        if (!result.success && mounted) _message(result.message);
       }
 
-      if (!mounted) {
-        return;
-      }
-
-      Navigator.of(context).pop(true);
+      if (!mounted) return;
+      Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
-        _showMessage(
-          _cleanError(e),
-        );
+        _message(e.toString().replaceFirst('Exception: ', ''));
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _saving = false;
-        });
-      }
+      if (mounted) setState(() => _saving = false);
     }
   }
 
-  String _cleanError(Object error) {
-    return error
-        .toString()
-        .replaceFirst('Exception: ', '')
-        .replaceFirst('FormatException: ', '')
-        .trim();
-  }
-
-  void _showMessage(String message) {
-    if (!mounted) {
-      return;
-    }
-
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-        ),
-      );
+  void _message(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add account'),
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            if (!_manualMode)
-              _buildInitialScannerView()
-            else
-              _buildAccountForm(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInitialScannerView() {
-    return Column(
-      children: [
-        const SizedBox(height: 40),
-        const Icon(
-          Icons.qr_code_scanner_rounded,
-          size: 76,
-        ),
-        const SizedBox(height: 20),
-        Text(
-          'Add a TOTP account',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 10),
-        Text(
-          'Scan the QR code provided by the service.',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: Theme.of(context)
-                .colorScheme
-                .onSurfaceVariant,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 28),
-        SizedBox(
-          width: double.infinity,
-          height: 54,
-          child: FilledButton.icon(
-            onPressed: _openingScanner ? null : _scanQrCode,
-            icon: const Icon(
-              Icons.qr_code_scanner_rounded,
-            ),
-            label: Text(
-              _openingScanner
-                  ? 'Opening scanner...'
-                  : 'Scan QR code',
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          height: 50,
-          child: OutlinedButton(
-            onPressed: _openingScanner
-                ? null
-                : () {
-              setState(() {
-                _manualMode = true;
-              });
-            },
-            child: const Text('Enter manually'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAccountForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Account details',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Enter the service name and security key.',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context)
-                .colorScheme
-                .onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 24),
-
-        TextField(
-          controller: _issuerController,
-          enabled: !_saving,
-          textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(
-            labelText: 'App / service name',
-            hintText: 'GitHub',
-            border: OutlineInputBorder(),
-          ),
-        ),
-
-        const SizedBox(height: 14),
-
-        TextField(
-          controller: _secretController,
-          enabled: !_saving,
-          obscureText: true,
-          autocorrect: false,
-          enableSuggestions: false,
-          textCapitalization: TextCapitalization.characters,
-          textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(
-            labelText: 'Security key',
-            hintText: 'JBSWY3DPEHPK3PXP',
-            border: OutlineInputBorder(),
-          ),
-        ),
-
-        const SizedBox(height: 18),
-
-        if (_accountName.trim().isNotEmpty)
-          Card(
-            margin: EdgeInsets.zero,
-            child: ListTile(
-              leading: const Icon(
-                Icons.person_outline_rounded,
-              ),
-              title: const Text('Account'),
-              subtitle: Text(
-                _accountName.trim(),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-
-        const SizedBox(height: 14),
-
-        OutlinedButton.icon(
-          onPressed: _saving ? null : _scanQrCode,
-          icon: const Icon(
-            Icons.qr_code_scanner_rounded,
-          ),
-          label: const Text('Scan a different QR code'),
-        ),
-
-        const SizedBox(height: 22),
-
-        DropdownButtonFormField<String>(
-          initialValue: _algorithm,
-          decoration: const InputDecoration(
-            labelText: 'Algorithm',
-            border: OutlineInputBorder(),
-          ),
-          items: const [
-            DropdownMenuItem(
-              value: 'SHA1',
-              child: Text('SHA-1'),
-            ),
-            DropdownMenuItem(
-              value: 'SHA256',
-              child: Text('SHA-256'),
-            ),
-            DropdownMenuItem(
-              value: 'SHA512',
-              child: Text('SHA-512'),
-            ),
-          ],
-          onChanged: _saving
-              ? null
-              : (value) {
-            if (value == null) {
-              return;
-            }
-
-            setState(() {
-              _algorithm = value;
-            });
-          },
-        ),
-
-        const SizedBox(height: 14),
-
-        DropdownButtonFormField<int>(
-          initialValue: _digits,
-          decoration: const InputDecoration(
-            labelText: 'Digits',
-            border: OutlineInputBorder(),
-          ),
-          items: const [
-            DropdownMenuItem(
-              value: 6,
-              child: Text('6 digits'),
-            ),
-            DropdownMenuItem(
-              value: 8,
-              child: Text('8 digits'),
-            ),
-          ],
-          onChanged: _saving
-              ? null
-              : (value) {
-            if (value == null) {
-              return;
-            }
-
-            setState(() {
-              _digits = value;
-            });
-          },
-        ),
-
-        const SizedBox(height: 14),
-
-        InputDecorator(
-          decoration: const InputDecoration(
-            labelText: 'Period',
-            border: OutlineInputBorder(),
-          ),
-          child: Text(
-            '$_period seconds',
-          ),
-        ),
-
-        const SizedBox(height: 28),
-
-        SizedBox(
-          width: double.infinity,
-          height: 54,
-          child: FilledButton(
-            onPressed: _saving ? null : _saveAccount,
-            child: _saving
-                ? const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-              ),
+      appBar: AppBar(title: const Text('Add account')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          if (!_manualMode)
+            Column(
+              children: [
+                const Icon(Icons.qr_code_scanner_rounded, size: 70),
+                const SizedBox(height: 18),
+                const Text(
+                  'Scan the QR code from the service you want to add.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: FilledButton.icon(
+                    onPressed: _openingScanner ? null : _scan,
+                    icon: const Icon(Icons.qr_code_scanner_rounded),
+                    label: const Text('Scan QR code'),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton(
+                  onPressed: _openingScanner ? null : () => setState(() => _manualMode = true),
+                  child: const Text('Enter manually'),
+                ),
+              ],
             )
-                : const Text('Save account'),
-          ),
-        ),
-      ],
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Account details',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _issuer,
+                  enabled: !_saving,
+                  decoration: const InputDecoration(
+                    labelText: 'App / service name',
+                    hintText: 'GitHub',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _secret,
+                  enabled: !_saving,
+                  obscureText: true,
+                  textCapitalization: TextCapitalization.characters,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Security key',
+                  ),
+                ),
+                const SizedBox(height: 20),
+                OutlinedButton.icon(
+                  onPressed: _saving ? null : _scan,
+                  icon: const Icon(Icons.qr_code_scanner_rounded),
+                  label: const Text('Scan a different QR code'),
+                ),
+                const SizedBox(height: 20),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.info_outline_rounded),
+                    title: const Text('Account name'),
+                    subtitle: Text(
+                      _accountName.isNotEmpty
+                          ? _accountName
+                          : 'For QR imports, the username or email is read from the QR code automatically.',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _algorithm,
+                  decoration: const InputDecoration(labelText: 'Algorithm'),
+                  items: const [
+                    DropdownMenuItem(value: 'SHA1', child: Text('SHA-1')),
+                    DropdownMenuItem(value: 'SHA256', child: Text('SHA-256')),
+                    DropdownMenuItem(value: 'SHA512', child: Text('SHA-512')),
+                  ],
+                  onChanged: _saving ? null : (value) => setState(() => _algorithm = value ?? 'SHA1'),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  initialValue: _digits,
+                  decoration: const InputDecoration(labelText: 'Digits'),
+                  items: const [
+                    DropdownMenuItem(value: 6, child: Text('6')),
+                    DropdownMenuItem(value: 8, child: Text('8')),
+                  ],
+                  onChanged: _saving ? null : (value) => setState(() => _digits = value ?? 6),
+                ),
+                const SizedBox(height: 12),
+                InputDecorator(
+                  decoration: const InputDecoration(labelText: 'Period'),
+                  child: Text('$_period seconds'),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  height: 54,
+                  child: FilledButton(
+                    onPressed: _saving ? null : _save,
+                    child: _saving
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Save account'),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 }

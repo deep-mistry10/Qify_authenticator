@@ -30,7 +30,6 @@ class TotpAccount {
     String? algorithm,
     int? digits,
     int? period,
-    DateTime? createdAt,
     DateTime? updatedAt,
     int? sortOrder,
   }) {
@@ -42,72 +41,37 @@ class TotpAccount {
       algorithm: algorithm ?? this.algorithm,
       digits: digits ?? this.digits,
       period: period ?? this.period,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt:
-      updatedAt ?? DateTime.now().toUtc(),
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? DateTime.now().toUtc(),
       sortOrder: sortOrder ?? this.sortOrder,
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'issuer': issuer,
-      'accountName': accountName,
-      'secret': secret,
-      'algorithm': algorithm,
-      'digits': digits,
-      'period': period,
-      'createdAt': createdAt.toIso8601String(),
-      'updatedAt': updatedAt.toIso8601String(),
-      'sortOrder': sortOrder,
-    };
-  }
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'issuer': issuer,
+        'accountName': accountName,
+        'secret': secret,
+        'algorithm': algorithm,
+        'digits': digits,
+        'period': period,
+        'createdAt': createdAt.toIso8601String(),
+        'updatedAt': updatedAt.toIso8601String(),
+        'sortOrder': sortOrder,
+      };
 
-  factory TotpAccount.fromJson(
-      Map<String, dynamic> json,
-      ) {
-    final createdAt =
-        DateTime.tryParse(
-          json['createdAt']?.toString() ?? '',
-        ) ??
-            DateTime.now().toUtc();
-
-    final updatedAt =
-        DateTime.tryParse(
-          json['updatedAt']?.toString() ?? '',
-        ) ??
-            createdAt;
-
+  factory TotpAccount.fromJson(Map<String, dynamic> json) {
     return TotpAccount(
-      id: json['id']?.toString() ?? '',
-      issuer:
-      json['issuer']?.toString().trim() ?? '',
-      accountName:
-      json['accountName']?.toString().trim() ??
-          '',
-      secret: json['secret']
-          ?.toString()
-          .replaceAll(
-        RegExp(r'\s+'),
-        '',
-      )
-          .toUpperCase() ??
-          '',
-      algorithm:
-      json['algorithm']?.toString().toUpperCase() ??
-          'SHA1',
-      digits:
-      (json['digits'] as num?)?.toInt() ??
-          6,
-      period:
-      (json['period'] as num?)?.toInt() ??
-          30,
-      createdAt: createdAt.toUtc(),
-      updatedAt: updatedAt.toUtc(),
-      sortOrder:
-      (json['sortOrder'] as num?)?.toInt() ??
-          0,
+      id: json['id'] as String,
+      issuer: (json['issuer'] as String? ?? '').trim(),
+      accountName: (json['accountName'] as String? ?? '').trim(),
+      secret: (json['secret'] as String).replaceAll(' ', '').toUpperCase(),
+      algorithm: (json['algorithm'] as String? ?? 'SHA1').toUpperCase(),
+      digits: (json['digits'] as num? ?? 6).toInt(),
+      period: (json['period'] as num? ?? 30).toInt(),
+      createdAt: DateTime.parse(json['createdAt'] as String).toUtc(),
+      updatedAt: DateTime.parse(json['updatedAt'] as String).toUtc(),
+      sortOrder: (json['sortOrder'] as num? ?? 0).toInt(),
     );
   }
 }

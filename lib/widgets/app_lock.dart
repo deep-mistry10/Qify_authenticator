@@ -4,18 +4,15 @@ import '../services/biometric_service.dart';
 import '../services/onboarding_service.dart';
 
 class AppLockGate extends StatefulWidget {
-  final Widget child;
-
-  /// External signal used by Settings > Lock now.
-  static final ValueNotifier<int> lockRequest =
-  ValueNotifier<int>(0);
-
   const AppLockGate({
     super.key,
     required this.child,
   });
 
-  /// Immediately requests the application to lock.
+  final Widget child;
+
+  static final ValueNotifier<int> lockRequest = ValueNotifier<int>(0);
+
   static void lockNow() {
     lockRequest.value++;
   }
@@ -26,238 +23,257 @@ class AppLockGate extends StatefulWidget {
 
 class _AppLockGateState extends State<AppLockGate>
     with WidgetsBindingObserver {
-  bool _initialized = false;
   bool _locked = false;
   bool _authenticating = false;
-  bool _lockOnResume = false;
-
-  int _lastHandledRequest = 0;
+  bool _shouldLockOnResume = false;
+  bool _initialCheckCompleted = false;
 
   @override
   void initState() {
     super.initState();
 
     WidgetsBinding.instance.addObserver(this);
+    AppLockGate.lockRequest.addListener(_handleLockRequest);
 
-    _lastHandledRequest =
-        AppLockGate.lockRequest.value;
-
-    AppLockGate.lockRequest.addListener(
-      _handleExternalLockRequest,
-    );
-
-    _initialize();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initialCheck();
+    });
   }
 
   @override
   void dispose() {
-    AppLockGate.lockRequest.removeListener(
-      _handleExternalLockRequest,
-    );
-
     WidgetsBinding.instance.removeObserver(this);
-
+    AppLockGate.lockRequest.removeListener(_handleLockRequest);
     super.dispose();
   }
 
-  Future<void> _initialize() async {
+  Future<bool> _canUseAppLock() async {
     try {
       final onboardingComplete =
       await OnboardingService.instance.isComplete();
 
-      if (!mounted) {
-        return;
+      if (!onboardingComplete) {
+        return false;
       }
 
-      setState(() {
-        _initialized = true;
-        _locked = false;
-      });
-
-      if (onboardingComplete) {
-        await _unlockIfRequired();
-      }
+      return await BiometricService.instance.isSupported();
     } catch (_) {
-      if (!mounted) {
+      return false;
+    }
+  }
+
+  Future<void> _initialCheck() async {
+    if (!mounted || _initialCheckCompleted) {
+      return;
+    }
+
+    _initialCheckCompleted = true;
+
+    final shouldLock = await _canUseAppLock();
+
+    if (!mounted || !shouldLock) {
+      return;
+    }
+
+    await _lockAndAuthenticate();
+  }
+
+  void _handleLockRequest() {
+    if (!mounted || _authenticating) {
+      return;
+    }
+
+    _shouldLockOnResume = false;
+
+    _lockAndAuthenticate();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      if (!_authenticating) {
+        _shouldLockOnResume = true;
+      }
+
+      return;
+    }
+
+    if (state == AppLifecycleState.resumed) {
+      if (_authenticating) {
         return;
       }
 
+      if (_shouldLockOnResume) {
+        _shouldLockOnResume = false;
+        _lockAndAuthenticate();
+      }
+    }
+  }
+
+  Future<bool> _runBiometricWithTimeout() async {
+    try {
+      return await BiometricService.instance
+          .authenticate()
+          .timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => false,
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _lockAndAuthenticate() async {
+    if (!mounted || _authenticating) {
+      return;
+    }
+
+    final canUseLock = await _canUseAppLock();
+
+    if (!mounted) {
+      return;
+    }
+
+    if (!canUseLock) {
       setState(() {
-        _initialized = true;
         _locked = false;
+        _authenticating = false;
       });
-    }
-  }
-
-  void _handleExternalLockRequest() {
-    if (!mounted) {
-      return;
-    }
-
-    final request =
-        AppLockGate.lockRequest.value;
-
-    if (request == _lastHandledRequest) {
-      return;
-    }
-
-    _lastHandledRequest = request;
-
-    _lockImmediately();
-  }
-
-  void _lockImmediately() {
-    if (!mounted) {
       return;
     }
 
     setState(() {
       _locked = true;
-      _lockOnResume = false;
+      _authenticating = true;
     });
-  }
-
-  Future<void> _unlockIfRequired() async {
-    if (!mounted || _authenticating) {
-      return;
-    }
-
-    _authenticating = true;
 
     try {
-      final supported =
-      await BiometricService.instance.isSupported();
+      final authenticated = await _runBiometricWithTimeout();
 
       if (!mounted) {
         return;
       }
 
-      if (!supported) {
+      if (authenticated) {
         setState(() {
           _locked = false;
         });
-
-        return;
-      }
-
-      setState(() {
-        _locked = true;
-      });
-
-      final success =
-      await BiometricService.instance.authenticate();
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _locked = !success;
-        _lockOnResume = false;
-      });
-    } finally {
-      _authenticating = false;
-    }
-  }
-
-  @override
-  void didChangeAppLifecycleState(
-      AppLifecycleState state,
-      ) {
-    if (!_initialized || _authenticating) {
-      return;
-    }
-
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden) {
-      _lockOnResume = true;
-
-      if (mounted) {
+      } else {
+        // Authentication was cancelled, failed, or timed out.
+        // Keep the app locked, but allow the user to press Unlock again.
         setState(() {
           _locked = true;
         });
       }
-
-      return;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _authenticating = false;
+        });
+      }
     }
+  }
 
-    if (state == AppLifecycleState.resumed &&
-        _lockOnResume) {
-      _lockOnResume = false;
-      _unlockIfRequired();
-    }
+  Future<void> _unlockManually() async {
+    await _lockAndAuthenticate();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_initialized) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
     if (!_locked) {
       return widget.child;
     }
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF3F5F2),
       body: SafeArea(
         child: Center(
           child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.lock_outline_rounded,
-                  size: 72,
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Qify Authenticator is locked',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
-                      ?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Use your device screen lock to continue.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyLarge
-                      ?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 28),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: FilledButton.icon(
-                    onPressed:
-                    _authenticating
-                        ? null
-                        : _unlockIfRequired,
-                    icon: const Icon(
-                      Icons.lock_open_rounded,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 28,
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: 420,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 76,
+                    height: 76,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0B6B57).withValues(
+                        alpha: 0.08,
+                      ),
+                      shape: BoxShape.circle,
                     ),
-                    label: Text(
-                      _authenticating
-                          ? 'Waiting...'
-                          : 'Unlock',
+                    child: const Icon(
+                      Icons.fingerprint,
+                      size: 38,
+                      color: Color(0xFF0B6B57),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Qify Authenticator',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF101512),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Verify your identity to continue',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: Color(0xFF61706A),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: FilledButton(
+                      onPressed: _authenticating
+                          ? null
+                          : _unlockManually,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF0B6B57),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: _authenticating
+                          ? const SizedBox(
+                        width: 21,
+                        height: 21,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                          : const Text(
+                        'Unlock',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

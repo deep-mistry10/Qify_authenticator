@@ -4,61 +4,28 @@ class Vault {
   final int version;
   final List<TotpAccount> accounts;
 
-  const Vault({
-    this.version = 1,
-    this.accounts = const [],
-  });
+  const Vault({this.version = 1, this.accounts = const []});
 
-  Vault copyWith({
-    int? version,
-    List<TotpAccount>? accounts,
-  }) {
+  Vault copyWith({int? version, List<TotpAccount>? accounts}) {
     return Vault(
       version: version ?? this.version,
-      accounts: List.unmodifiable(
-        accounts ?? this.accounts,
-      ),
+      accounts: List.unmodifiable(accounts ?? this.accounts),
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'version': version,
-      'accounts': accounts
-          .map(
-            (account) => account.toJson(),
-      )
-          .toList(),
-    };
-  }
+  Map<String, dynamic> toJson() => {
+        'version': version,
+        'accounts': accounts.map((a) => a.toJson()).toList(),
+      };
 
-  factory Vault.fromJson(
-      Map<String, dynamic> json,
-      ) {
-    final rawAccounts =
-    json['accounts'];
-
-    final accounts = <TotpAccount>[];
-
-    if (rawAccounts is List) {
-      for (final item in rawAccounts) {
-        if (item is Map) {
-          accounts.add(
-            TotpAccount.fromJson(
-              Map<String, dynamic>.from(item),
-            ),
-          );
-        }
-      }
-    }
-
+  factory Vault.fromJson(Map<String, dynamic> json) {
+    final raw = (json['accounts'] as List? ?? const []);
     return Vault(
-      version:
-      (json['version'] as num?)?.toInt() ??
-          1,
-      accounts: List.unmodifiable(
-        accounts,
-      ),
+      version: (json['version'] as num? ?? 1).toInt(),
+      accounts: raw
+          .whereType<Map>()
+          .map((e) => TotpAccount.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
     );
   }
 }
